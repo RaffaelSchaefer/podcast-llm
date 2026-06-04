@@ -1,0 +1,29 @@
+[project]
+name = "podcast-llm"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "lmstudio>=1.5.0",
+    "markitdown>=0.1.6",
+    "markitdown-ocr>=0.1.0",
+    "pydantic>=2.13.4",
+    "python-dotenv>=1.2.2",
+    "soundfile>=0.13.1",
+    "supertonic>=1.3.1",
+    "textual>=8.2.7",
+]
+
+[project.scripts]
+podcast-llm = "podcast_llm:main"
+
+[build-system]
+requires = ["uv_build>=0.11.16,<0.12.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.3",
+    "ruff>=0.15.15",
+]

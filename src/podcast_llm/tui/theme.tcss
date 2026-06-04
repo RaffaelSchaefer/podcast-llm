@@ -1,0 +1,194 @@
+Screen {
+    align: center top;
+    background: $background;
+}
+
+Header {
+    background: $surface;
+}
+
+StepIndicator {
+    width: 84;
+    max-width: 100%;
+    height: auto;
+    content-align: center middle;
+    padding: 1 0;
+    color: $text-muted;
+}
+
+.wizard-card {
+    width: 84;
+    max-width: 100%;
+    height: 1fr;
+    border: round $primary;
+    border-title-align: center;
+    border-title-color: $primary;
+    background: $surface;
+    padding: 1 2;
+    margin-bottom: 1;
+}
+
+.card-body {
+    height: 1fr;
+}
+
+.section-label {
+    color: $text-muted;
+    text-style: bold;
+    margin-top: 1;
+}
+
+.hint {
+    color: $text-muted;
+}
+
+.wizard-status {
+    height: auto;
+    color: $warning;
+    margin-top: 1;
+}
+
+.nav-row {
+    height: auto;
+    align: right middle;
+    margin-top: 1;
+}
+
+.nav-row Button {
+    margin-left: 2;
+}
+
+Input, Select, TextArea {
+    margin-bottom: 1;
+}
+
+#location {
+    margin-bottom: 1;
+}
+
+#picker {
+    height: 13;
+    margin-bottom: 1;
+}
+
+#browser {
+    width: 3fr;
+    height: 100%;
+    border: round $secondary;
+    border-title-color: $secondary;
+    margin-right: 1;
+}
+
+#chosen {
+    width: 2fr;
+    height: 100%;
+    border: round $secondary;
+    border-title-align: left;
+    border-title-color: $secondary;
+}
+
+#sources_actions {
+    height: auto;
+    align: left middle;
+    margin-bottom: 1;
+}
+
+#sources_actions Button {
+    margin-right: 2;
+}
+
+#custom_instructions {
+    height: 6;
+}
+
+RadioSet {
+    height: auto;
+    width: 100%;
+    margin-bottom: 1;
+}
+
+#review_summary {
+    height: auto;
+}
+
+/* ---- Generation screen ---- */
+.gen-card {
+    width: 96;
+    max-width: 100%;
+    height: 1fr;
+    border: round $primary;
+    border-title-align: center;
+    border-title-color: $primary;
+    background: $surface;
+    padding: 1 2;
+    margin-bottom: 1;
+}
+
+#gen_title {
+    text-style: bold;
+    color: $accent;
+    content-align: center middle;
+    text-align: center;
+    margin-bottom: 0;
+}
+
+#view_hint {
+    color: $text-muted;
+    content-align: center middle;
+    text-align: center;
+    margin-bottom: 1;
+}
+
+#theater_panel {
+    height: 1fr;
+    align: center middle;
+}
+
+#phase_anim {
+    height: 20;
+    width: 100%;
+    content-align: center middle;
+    text-align: center;
+    border: round $panel;
+    background: $background;
+    margin-bottom: 1;
+}
+
+#phase_caption {
+    height: auto;
+    color: $accent;
+    content-align: center middle;
+    text-align: center;
+    margin-bottom: 1;
+}
+
+#log_panel {
+    height: 1fr;
+}
+
+PhaseChecklist {
+    height: auto;
+    margin-bottom: 1;
+}
+
+#gen_bar {
+    width: 100%;
+    margin-bottom: 1;
+}
+
+#gen_log {
+    height: 1fr;
+    border: round $panel;
+    background: $background;
+    padding: 0 1;
+}
+
+#gen_nav {
+    height: auto;
+    align: right middle;
+    margin-top: 1;
+}
+
+#gen_nav Button {
+    margin-left: 2;
+}
