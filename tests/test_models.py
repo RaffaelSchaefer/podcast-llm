@@ -3,6 +3,7 @@ from pathlib import Path
 import pytest
 
 from podcast_llm.models import GenerationRequest
+from podcast_llm.models import DialogueTurn
 
 
 def test_generation_request_applies_defaults(tmp_path: Path) -> None:
@@ -11,8 +12,10 @@ def test_generation_request_applies_defaults(tmp_path: Path) -> None:
 
     request = GenerationRequest(source_paths=[source], language="en", duration_minutes=8)
 
-    assert request.host_a_voice == "M1"
-    assert request.host_b_voice == "F1"
+    assert request.host_a_voice == "Aiden"
+    assert request.host_b_voice == "Serena"
+    assert request.tts_mode == "auto"
+    assert request.qwen_tts_model == "Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice"
     assert request.llm_provider == "lmstudio"
     assert request.lmstudio_model is None
     assert request.lmstudio_host is None
@@ -36,3 +39,9 @@ def test_generation_request_rejects_duration_outside_one_hour(tmp_path: Path) ->
 
     with pytest.raises(ValueError, match="less than or equal to 60"):
         GenerationRequest(source_paths=[source], language="en", duration_minutes=61)
+
+
+def test_dialogue_turn_defaults_to_no_delivery_instruction() -> None:
+    turn = DialogueTurn(speaker="Host A", text="A clean spoken line.")
+
+    assert turn.delivery_instruction == ""

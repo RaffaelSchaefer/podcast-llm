@@ -6,6 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 ExportFormat = Literal["wav", "mp3"]
+TtsMode = Literal["auto", "cuda", "apple"]
 
 
 class GenerationRequest(BaseModel):
@@ -14,8 +15,10 @@ class GenerationRequest(BaseModel):
     source_paths: list[Path]
     language: str
     duration_minutes: int = Field(ge=1, le=60)
-    host_a_voice: str = "M1"
-    host_b_voice: str = "F1"
+    host_a_voice: str = "Aiden"
+    host_b_voice: str = "Serena"
+    tts_mode: TtsMode = "auto"
+    qwen_tts_model: str = "Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice"
     llm_provider: str = "lmstudio"
     lmstudio_model: str | None = Field(default_factory=lambda: os.getenv("PODCAST_LLM_MODEL") or None)
     lmstudio_host: str | None = Field(default_factory=lambda: os.getenv("PODCAST_LLM_HOST") or None)
@@ -49,6 +52,7 @@ class EpisodeOutline(BaseModel):
 class DialogueTurn(BaseModel):
     speaker: Literal["Host A", "Host B"]
     text: str = Field(min_length=1)
+    delivery_instruction: str = ""
 
 
 class GenerationResult(BaseModel):

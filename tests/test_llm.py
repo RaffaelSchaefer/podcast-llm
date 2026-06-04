@@ -4,6 +4,7 @@ import pytest
 
 from podcast_llm import llm
 from podcast_llm.llm import (
+    DEFAULT_LM_STUDIO_HOST,
     LLMOutputError,
     LMStudioProvider,
     list_available_models,
@@ -115,6 +116,25 @@ def test_provider_rejects_malformed_script_json(tmp_path: Path) -> None:
         provider.make_script_segment(outline.segments[0], "", make_request(tmp_path))
 
 
+def test_provider_parses_script_delivery_instructions(tmp_path: Path) -> None:
+    model = FakeModel(
+        '{"turns":[{"speaker":"Host A","text":"That changes the stakes.",'
+        '"delivery_instruction":"slow and serious, with restrained tension"}]}'
+    )
+    provider = LMStudioProvider(model=model)
+    segment = OutlineSegment(
+        title="Risk",
+        summary="A serious consequence appears",
+        target_minutes=2,
+        source_focus=["notes"],
+    )
+
+    turns = provider.make_script_segment(segment, "", make_request(tmp_path))
+
+    assert turns[0].text == "That changes the stakes."
+    assert turns[0].delivery_instruction == "slow and serious, with restrained tension"
+
+
 def test_provider_raises_on_empty_response(tmp_path: Path) -> None:
     model = FakeModel("")
     provider = LMStudioProvider(model=model)
@@ -163,6 +183,26 @@ def test_provider_requests_structured_script(tmp_path: Path) -> None:
     assert response_format["type"] == "json"
     turns_schema = response_format["jsonSchema"]["properties"]["turns"]
     assert turns_schema["items"]["properties"]["speaker"]["enum"] == ["Host A", "Host B"]
+    assert "delivery_instruction" in turns_schema["items"]["properties"]
+    assert "delivery_instruction" in turns_schema["items"]["required"]
+
+
+def test_provider_script_prompt_requests_delivery_instructions(tmp_path: Path) -> None:
+    model = FakeModel('{"turns":[{"speaker":"Host A","text":"Welcome."}]}')
+    provider = LMStudioProvider(model=model)
+    segment = OutlineSegment(
+        title="Intro",
+        summary="Open with a joke before a serious claim",
+        target_minutes=2,
+        source_focus=["notes"],
+    )
+
+    provider.make_script_segment(segment, "", make_request(tmp_path))
+
+    prompt = _last_user_prompt(model)
+    assert "delivery_instruction" in prompt
+    assert "Do not include delivery notes in text" in prompt
+    assert "jokes, serious claims, sad moments, tension, pacing" in prompt
 
 
 def test_provider_for_request_loads_named_model_on_custom_host(
@@ -219,8 +259,32 @@ def test_provider_for_request_uses_default_host_and_loaded_model(
 
     provider_for_request(request)
 
-    # No host -> let the SDK find its default; no model -> reuse the loaded model.
-    assert created == {"host": None, "model_key": None}
+    # No host -> use the app's documented LM Studio default; no model -> reuse the loaded model.
+    assert created == {"host": DEFAULT_LM_STUDIO_HOST, "model_key": None}
+
+
+def test_list_available_models_uses_documented_default_host(monkeypatch: pytest.MonkeyPatch) -> None:
+    created: dict = {}
+
+    class FakeLlmNamespace:
+        def list_downloaded(self):
+            return []
+
+    class FakeClient:
+        def __init__(self, host=None) -> None:
+            created["host"] = host
+            self.llm = FakeLlmNamespace()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+    monkeypatch.setattr(llm.lms, "Client", FakeClient)
+
+    assert list_available_models() == []
+    assert created == {"host": DEFAULT_LM_STUDIO_HOST}
 
 
 def test_provider_for_request_rejects_unknown_provider(tmp_path: Path) -> None:

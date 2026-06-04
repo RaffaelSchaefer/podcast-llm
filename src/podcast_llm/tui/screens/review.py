@@ -48,6 +48,8 @@ class ReviewScreen(WizardScreen):
             f"| Duration | {draft.duration_minutes} min |",
             f"| Host A voice | {draft.host_a_voice} |",
             f"| Host B voice | {draft.host_b_voice} |",
+            f"| TTS mode | {draft.tts_mode} |",
+            f"| TTS model | {draft.qwen_tts_model} |",
             f"| Export | {draft.export_format.upper()} |",
             f"| LLM endpoint | {endpoint} |",
             f"| Model | {model} |",

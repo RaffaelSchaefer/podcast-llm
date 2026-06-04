@@ -8,13 +8,17 @@ from podcast_llm.presets import preset_by_id
 from podcast_llm.progress import ProgressEvent
 from podcast_llm.tui import PodcastWizard
 from podcast_llm.tui.draft import PodcastDraft
-from podcast_llm.tui.screens.generation import GenerationDone, GenerationScreen, ProgressUpdate
+from podcast_llm.tui.screens.generation import (
+    GenerationDone,
+    GenerationFailed,
+    GenerationScreen,
+    ProgressUpdate,
+)
 from podcast_llm.tui.screens.review import ReviewScreen
 from podcast_llm.tui.screens.sources import SourcesScreen
 from podcast_llm.tui.screens.style import StyleScreen
 from podcast_llm.tui.screens.voices import VoicesScreen
-from podcast_llm.tui.ascii_art import CANVAS_H, CANVAS_W, FRAMES
-from podcast_llm.tui.widgets import GENERATION_PHASES, PhaseAnimation, PhaseChecklist
+from podcast_llm.tui.widgets import GENERATION_PHASES, PhaseChecklist
 
 
 def _write_source(directory: Path, name: str) -> Path:
@@ -50,8 +54,9 @@ async def test_wizard_builds_generation_request_from_all_fields(
 
         voices = app.screen
         assert isinstance(voices, VoicesScreen)
-        voices.query_one("#host_a", Select).value = "M1"
-        voices.query_one("#host_b", Select).value = "F1"
+        voices.query_one("#host_a", Select).value = "Aiden"
+        voices.query_one("#host_b", Select).value = "Serena"
+        voices.query_one("#tts_mode", Select).value = "apple"
         voices.query_one("#export", Select).value = "mp3"
         voices.action_next()
         await pilot.pause()
@@ -62,8 +67,9 @@ async def test_wizard_builds_generation_request_from_all_fields(
     assert request.source_paths == [source]
     assert request.language == "de"
     assert request.duration_minutes == 12
-    assert request.host_a_voice == "M1"
-    assert request.host_b_voice == "F1"
+    assert request.host_a_voice == "Aiden"
+    assert request.host_b_voice == "Serena"
+    assert request.tts_mode == "apple"
     assert request.lmstudio_host == "100.124.83.79:1234"
     assert request.lmstudio_model == "qwen/qwen3.6-35b-a3b"
     assert request.export_format == "mp3"
@@ -71,7 +77,7 @@ async def test_wizard_builds_generation_request_from_all_fields(
 
 
 @pytest.mark.anyio
-async def test_voices_screen_leaves_model_to_env_and_overrides_host(
+async def test_voices_screen_prefills_env_model_and_overrides_host(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     source = _write_source(tmp_path, "notes.md")
@@ -89,16 +95,18 @@ async def test_voices_screen_leaves_model_to_env_and_overrides_host(
 
         voices = app.screen
         assert isinstance(voices, VoicesScreen)
-        # The model has no input field — it always comes from the environment.
-        assert list(voices.query("#lmstudio_model")) == []
         assert list(voices.query("#openai_api_key")) == []
+        assert voices.query_one("#lmstudio_model", Select).value == "qwen/qwen3.6-35b-a3b"
         voices.query_one("#lmstudio_host", Input).value = "localhost:4321"
         voices.commit(strict=True)
 
     assert app.draft.lmstudio_host == "localhost:4321"
+    assert app.draft.lmstudio_model == "qwen/qwen3.6-35b-a3b"
+    assert app.draft.tts_mode == "auto"
     request = app.draft.to_request()
     assert request.lmstudio_host == "localhost:4321"
     assert request.lmstudio_model == "qwen/qwen3.6-35b-a3b"
+    assert request.tts_mode == "auto"
 
 
 @pytest.mark.anyio
@@ -132,7 +140,7 @@ async def test_voices_connection_test_uses_env_endpoint(
 
 
 @pytest.mark.anyio
-async def test_voices_connection_test_reports_models_without_model_input(tmp_path: Path) -> None:
+async def test_voices_connection_test_populates_model_selector(tmp_path: Path) -> None:
     source = _write_source(tmp_path, "notes.md")
     app = PodcastWizard()
 
@@ -148,7 +156,84 @@ async def test_voices_connection_test_reports_models_without_model_input(tmp_pat
         assert isinstance(voices, VoicesScreen)
         voices._show_connection_models(["llama-3", "phi-3"])
         await pilot.pause()
-        assert list(voices.query("#lmstudio_model")) == []
+        model_select = voices.query_one("#lmstudio_model", Select)
+        model_select.value = "phi-3"
+        voices.commit(strict=True)
+
+    assert app.draft.lmstudio_model == "phi-3"
+
+
+@pytest.mark.anyio
+async def test_voices_auto_loads_models_on_mount(tmp_path: Path) -> None:
+    source = _write_source(tmp_path, "notes.md")
+    app = PodcastWizard()
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        app.screen.add_source(source)
+        app.screen.action_next()
+        await pilot.pause()
+        app.screen.action_next()
+        await pilot.pause()
+
+        voices = app.screen
+        assert isinstance(voices, VoicesScreen)
+        captured: dict[str, str | None] = {}
+
+        def fake_test_connection(host: str | None) -> None:
+            captured["host"] = host
+
+        voices._test_connection = fake_test_connection  # type: ignore[method-assign]
+        voices.on_mount()
+
+    assert captured == {"host": None}
+
+
+@pytest.mark.anyio
+async def test_voices_connection_failure_does_not_block_next(tmp_path: Path) -> None:
+    source = _write_source(tmp_path, "notes.md")
+    app = PodcastWizard()
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        app.screen.add_source(source)
+        app.screen.action_next()
+        await pilot.pause()
+        app.screen.action_next()
+        await pilot.pause()
+
+        voices = app.screen
+        assert isinstance(voices, VoicesScreen)
+        voices._show_connection_error(RuntimeError("LM Studio is not running"))
+        voices.action_next()
+        await pilot.pause()
+
+        assert isinstance(app.screen, ReviewScreen)
+
+
+@pytest.mark.anyio
+async def test_selected_model_survives_host_change(tmp_path: Path) -> None:
+    source = _write_source(tmp_path, "notes.md")
+    app = PodcastWizard()
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        app.screen.add_source(source)
+        app.screen.action_next()
+        await pilot.pause()
+        app.screen.action_next()
+        await pilot.pause()
+
+        voices = app.screen
+        assert isinstance(voices, VoicesScreen)
+        voices._show_connection_models(["llama-3", "phi-3"])
+        await pilot.pause()
+        voices.query_one("#lmstudio_model", Select).value = "llama-3"
+        voices.query_one("#lmstudio_host", Input).value = "localhost:4321"
+        voices.commit(strict=True)
+
+    assert app.draft.lmstudio_host == "localhost:4321"
+    assert app.draft.lmstudio_model == "llama-3"
 
 
 @pytest.mark.anyio
@@ -309,6 +394,7 @@ def test_draft_to_request_uses_env_for_llm_endpoint_and_model(
     assert request.duration_minutes == 20
     assert request.host_a_voice == "M2"
     assert request.host_b_voice == "F3"
+    assert request.tts_mode == "auto"
     assert request.custom_instructions == "Be concise."
     assert request.lmstudio_host == "100.124.83.79:1234"
     assert request.lmstudio_model == "qwen/qwen3.6-35b-a3b"
@@ -340,69 +426,8 @@ async def test_review_summary_shows_env_llm_connection(
 
     assert "| LLM endpoint | 100.124.83.79:1234 |" in summary
     assert "| Model | qwen/qwen3.6-35b-a3b |" in summary
-
-
-def test_ascii_frames_share_a_fixed_canvas() -> None:
-    from rich.text import Text
-
-    for phase, frames in FRAMES.items():
-        assert frames, f"{phase} has no frames"
-        for frame in frames:
-            lines = frame.split("\n")
-            assert len(lines) == CANVAS_H, f"{phase} frame has {len(lines)} rows"
-            for line in lines:
-                width = len(Text.from_markup(line).plain)
-                assert width == CANVAS_W, f"{phase} line width {width}: {line!r}"
-
-
-def test_ascii_frames_are_theater_scale_and_do_not_reuse_old_art() -> None:
-    art = "\n".join(frame for frames in FRAMES.values() for frame in frames)
-    old_animation_markers = (
-        "Parsing the sources",
-        "Drafting the outline",
-        "Writing the script",
-        "QWERTYUIOP",
-        "FAC-TORY",
-    )
-
-    assert CANVAS_W >= 60
-    assert CANVAS_H >= 15
-    for marker in old_animation_markers:
-        assert marker not in art
-
-
-def test_phase_animation_set_phase_selects_frames_and_ignores_no_ops() -> None:
-    anim = PhaseAnimation()
-    assert anim._frames is FRAMES["parse"]
-
-    anim.set_phase("export")
-    assert anim._frames is FRAMES["export"]
-
-    anim._index = 2
-    anim.set_phase("export")  # repeat of current phase is a no-op
-    assert anim._index == 2
-
-    anim.set_phase("nonexistent")  # unknown phase is a no-op
-    assert anim._frames is FRAMES["export"]
-    assert anim._index == 2
-
-    anim.set_phase("done")
-    assert anim._frames is FRAMES["done"]
-    assert anim._index == 0
-
-
-def test_phase_animation_selects_synthesize_frames_for_active_speaker() -> None:
-    anim = PhaseAnimation()
-
-    anim.set_phase("synthesize", speaker="A")
-    host_a_frame = anim._frames[0]
-
-    anim.set_phase("synthesize", speaker="B")
-    host_b_frame = anim._frames[0]
-
-    assert host_a_frame != host_b_frame
-    assert "HOST A" in host_a_frame
-    assert "HOST B" in host_b_frame
+    assert "| TTS mode | auto |" in summary
+    assert "| TTS model | Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice |" in summary
 
 
 @pytest.mark.anyio
@@ -440,11 +465,12 @@ async def test_generation_screen_updates_progress(tmp_path: Path) -> None:
         await pilot.pause()
 
         assert checklist._max_index == len(GENERATION_PHASES)
-        assert screen.query_one("#gen_back", Button).disabled is False
+        assert screen.query_one("#gen_open", Button).disabled is False
+        assert screen.query_one("#gen_restart", Button).disabled is False
 
 
 @pytest.mark.anyio
-async def test_generation_screen_defaults_to_theater_and_toggles_log_view(tmp_path: Path) -> None:
+async def test_generation_screen_keeps_bar_indeterminate_off_synthesize(tmp_path: Path) -> None:
     request = PodcastDraft(source_paths=[tmp_path / "notes.md"], language="en", duration_minutes=2).to_request()
     app = PodcastWizard()
 
@@ -454,23 +480,96 @@ async def test_generation_screen_defaults_to_theater_and_toggles_log_view(tmp_pa
         app.push_screen(screen)
         await pilot.pause()
 
-        theater = screen.query_one("#theater_panel")
-        log_panel = screen.query_one("#log_panel")
-        hint = screen.query_one("#view_hint", Static)
+        bar = screen.query_one("#gen_bar", ProgressBar)
+        screen.on_progress_update(ProgressUpdate(ProgressEvent("synthesize", "turn 1", 1, 4)))
+        await pilot.pause()
+        assert bar.total == 4
 
-        assert theater.display is True
-        assert log_panel.display is False
-        assert "L" in str(hint.content)
+        # Moving on to a phase without a real total should not leave the bar stuck.
+        screen.on_progress_update(ProgressUpdate(ProgressEvent("export", "writing wav")))
+        await pilot.pause()
+        assert bar.total is None
 
-        await pilot.press("l")
+
+@pytest.mark.anyio
+async def test_generation_failure_enables_restart_only(tmp_path: Path) -> None:
+    request = PodcastDraft(source_paths=[tmp_path / "notes.md"], language="en", duration_minutes=2).to_request()
+    app = PodcastWizard()
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        screen = GenerationScreen(request, auto_start=False)
+        app.push_screen(screen)
         await pilot.pause()
 
-        assert theater.display is False
-        assert log_panel.display is True
-        assert "theater" in str(hint.content).lower()
-
-        await pilot.press("l")
+        screen.on_generation_failed(GenerationFailed(RuntimeError("boom")))
         await pilot.pause()
 
-        assert theater.display is True
-        assert log_panel.display is False
+        assert screen.query_one("#gen_restart", Button).disabled is False
+        assert screen.query_one("#gen_open", Button).disabled is True
+
+
+@pytest.mark.anyio
+async def test_generation_screen_reports_qwen_preflight_failure(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    request = PodcastDraft(source_paths=[tmp_path / "notes.md"], language="en", duration_minutes=2).to_request()
+    app = PodcastWizard()
+
+    def fail_preflight() -> None:
+        raise RuntimeError("Qwen TTS startup failed: bad value(s) in fds_to_keep")
+
+    monkeypatch.setattr("podcast_llm.tui.screens.generation.preflight_qwen_runtime", fail_preflight)
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        screen = GenerationScreen(request)
+        screen._run = lambda: (_ for _ in ()).throw(AssertionError("generation worker should not start"))
+        app.push_screen(screen)
+        await pilot.pause()
+
+        assert screen.query_one("#gen_restart", Button).disabled is False
+        assert screen.query_one("#gen_open", Button).disabled is True
+        assert "Qwen TTS startup failed" in str(screen.query_one("#gen_title", Static).content)
+
+
+@pytest.mark.anyio
+async def test_rail_goto_step_allows_visited_and_blocks_future(tmp_path: Path) -> None:
+    source = _write_source(tmp_path, "notes.md")
+    app = PodcastWizard()
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        app.screen.add_source(source)
+        app.screen.action_next()  # -> Style (visits index 1)
+        await pilot.pause()
+        assert isinstance(app.screen, StyleScreen)
+
+        # Jumping forward to an unvisited step is rejected.
+        app.goto_step(3)
+        await pilot.pause()
+        assert isinstance(app.screen, StyleScreen)
+
+        # Jumping back to a visited step works.
+        app.goto_step(0)
+        await pilot.pause()
+        assert isinstance(app.screen, SourcesScreen)
+
+
+@pytest.mark.anyio
+async def test_restart_resets_draft_and_returns_to_sources(tmp_path: Path) -> None:
+    source = _write_source(tmp_path, "notes.md")
+    app = PodcastWizard()
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        app.screen.add_source(source)
+        app.screen.action_next()
+        await pilot.pause()
+        assert isinstance(app.screen, StyleScreen)
+
+        app.restart()
+        await pilot.pause()
+
+        assert isinstance(app.screen, SourcesScreen)
+        assert app.draft.source_paths == []
+        assert app._step_index == 0
+        assert app._max_index == 0

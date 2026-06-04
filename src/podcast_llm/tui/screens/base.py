@@ -5,12 +5,13 @@ from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.screen import Screen
 from textual.widgets import Button, Footer, Header, Static
 
-from ..widgets import StepIndicator
+from ..widgets import StepRail
 
 
 class WizardScreen(Screen):
-    """Shared frame for a single wizard step: header, step indicator, a titled
-    card with the step body, a status line, and a Back/Next nav row."""
+    """Shared full-bleed frame for a single wizard step: a persistent left step
+    rail, a titled content column with the step body, a status line, and a
+    Back/Next nav row."""
 
     STEP_INDEX: int = 0
     CARD_TITLE: str = ""
@@ -23,18 +24,19 @@ class WizardScreen(Screen):
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=False)
-        yield StepIndicator(self.STEP_INDEX)
-        with Vertical(classes="wizard-card"):
-            with VerticalScroll(classes="card-body"):
-                yield from self.compose_body()
-            yield Static("", classes="wizard-status")
-            with Horizontal(classes="nav-row"):
-                yield Button("◀  Back", id="nav_back", disabled=self.STEP_INDEX == 0)
-                yield Button(f"{self.NEXT_LABEL}  ▶", id="nav_next", variant="primary")
+        with Horizontal(classes="wizard-frame"):
+            yield StepRail(self.STEP_INDEX, classes="step-rail")
+            with Vertical(classes="wizard-content"):
+                yield Static(self.CARD_TITLE, classes="content-title")
+                with VerticalScroll(classes="card-body"):
+                    yield from self.compose_body()
+                yield Static("", classes="wizard-status")
+                with Horizontal(classes="nav-row"):
+                    yield Button("◀  Back", id="nav_back", disabled=self.STEP_INDEX == 0)
+                    yield Button(f"{self.NEXT_LABEL}  ▶", id="nav_next", variant="primary")
         yield Footer()
 
     def on_mount(self) -> None:
-        self.query_one(".wizard-card", Vertical).border_title = self.CARD_TITLE
         self.populate()
 
     # --- hooks for subclasses ---

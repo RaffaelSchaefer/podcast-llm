@@ -13,6 +13,7 @@ from ._paths import (
     IGNORED_SOURCE_DIRECTORIES,
     contains_path,
     expand_entry,
+    human_size,
     is_hidden,
     path_key,
     split_tokens,
@@ -52,7 +53,11 @@ class SourcesScreen(WizardScreen):
         with Horizontal(id="sources_actions"):
             yield Button("Add all in this folder", id="add_all")
             yield Button("Clear chosen", id="clear_chosen", variant="warning")
-        yield Label("Add a file, folder, or glob (separate several with ;):", classes="section-label")
+        yield Label(
+            "Add a file, folder, or glob (separate several with ;). "
+            "This also reaches files the browser hides (e.g. inside .git or outputs):",
+            classes="section-label",
+        )
         yield Input(placeholder="e.g.  ~/notes/*.md  ;  C:\\refs\\paper.pdf", id="add_path")
 
     def on_mount(self) -> None:
@@ -119,8 +124,14 @@ class SourcesScreen(WizardScreen):
     def _file_label(self, path: Path) -> Text:
         selected = contains_path(self.app.draft.source_paths, path)
         label = Text()
-        label.append("[x] " if selected else "[ ] ", style="bold green" if selected else "dim")
+        if selected:
+            label.append("✔ ", style="bold green")
+        else:
+            label.append("· ", style="dim")
         label.append(path.name)
+        size = human_size(path)
+        if size:
+            label.append(f"  {size}", style="dim")
         return label
 
     # --- selection ---

@@ -5,7 +5,7 @@ from .llm import LLMProvider
 from .models import DialogueTurn, GenerationRequest, GenerationResult
 from .parser import MarkItDownParser
 from .progress import ProgressCallback, ProgressEvent
-from .tts import SupertonicSynthesizer
+from .tts import QwenSynthesizer
 
 
 class PodcastPipeline:
@@ -13,7 +13,7 @@ class PodcastPipeline:
         self,
         parser: MarkItDownParser | None = None,
         llm_provider: LLMProvider | None = None,
-        synthesizer: SupertonicSynthesizer | None = None,
+        synthesizer: QwenSynthesizer | None = None,
     ) -> None:
         self.parser = parser or MarkItDownParser()
         self.llm_provider = llm_provider
@@ -33,7 +33,7 @@ class PodcastPipeline:
 
             self.llm_provider = provider_for_request(request)
         if self.synthesizer is None:
-            self.synthesizer = SupertonicSynthesizer()
+            self.synthesizer = QwenSynthesizer(request)
 
         emit(ProgressEvent("parse", "Parsing source files…"))
         parsed_sources = self.parser.parse(request.source_paths, request=request)

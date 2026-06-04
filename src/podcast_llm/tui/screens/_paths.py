@@ -53,6 +53,19 @@ def is_hidden(path: Path) -> bool:
     return Path(path).name.startswith(".")
 
 
+def human_size(path: Path) -> str:
+    """Best-effort human-readable file size, or "" if it cannot be read."""
+    try:
+        size = float(Path(path).stat().st_size)
+    except OSError:
+        return ""
+    for unit in ("B", "KB", "MB", "GB"):
+        if size < 1024 or unit == "GB":
+            return f"{size:.0f} {unit}" if unit == "B" else f"{size:.1f} {unit}"
+        size /= 1024
+    return ""
+
+
 def is_supported(path: Path) -> bool:
     return Path(path).suffix.lower() in SUPPORTED_EXTENSIONS
 

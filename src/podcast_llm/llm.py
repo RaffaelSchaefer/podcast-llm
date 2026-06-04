@@ -97,14 +97,23 @@ class LMStudioProvider:
                     "role": "system",
                     "content": (
                         "You write natural NotebookLM-style two-host explainer dialogue. "
-                        "Use only Host A and Host B. Keep each turn suitable for text-to-speech."
+                        "Use only Host A and Host B. Keep each turn suitable for text-to-speech. "
+                        "Use delivery instructions to guide emotion, pacing, and tension without "
+                        "putting those notes into the spoken text."
                     ),
                 },
                 {
                     "role": "user",
                     "content": (
                         "Return JSON with this shape: "
-                        '{"turns": [{"speaker": "Host A"|"Host B", "text": str}]}. '
+                        '{"turns": [{"speaker": "Host A"|"Host B", "text": str, '
+                        '"delivery_instruction": str}]}. '
+                        "Do not include delivery notes in text; text must contain only words the host should say. "
+                        "Use concise Qwen TTS delivery_instruction values for jokes, serious claims, sad moments, "
+                        "tension, pacing, disagreement, transitions, and conclusions. "
+                        "Examples: 'light, playful pacing with a small amused lift', "
+                        "'slow and serious, with restrained tension', "
+                        "'soft, sad, reflective tone'. "
                         f"Target language: {request.language}. "
                         f"Segment title: {outline_segment.title}. "
                         f"Segment summary: {outline_segment.summary}. "
@@ -164,7 +173,7 @@ def _resolve_model(model_key: str | None, host: str | None) -> object:
 
 def _client(host: str | None) -> lms.Client:
     """Open an LM Studio client, honouring a custom ``host:port`` when given."""
-    return lms.Client(host) if host else lms.Client()
+    return lms.Client(host or DEFAULT_LM_STUDIO_HOST)
 
 
 def _custom_instructions_prompt(request: GenerationRequest) -> str:
@@ -215,8 +224,9 @@ def _dialogue_turns_schema() -> dict:
                     "properties": {
                         "speaker": {"type": "string", "enum": ["Host A", "Host B"]},
                         "text": {"type": "string", "minLength": 1},
+                        "delivery_instruction": {"type": "string"},
                     },
-                    "required": ["speaker", "text"],
+                    "required": ["speaker", "text", "delivery_instruction"],
                 },
             },
         },

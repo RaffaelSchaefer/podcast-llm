@@ -15,6 +15,9 @@ wheels/
 data
 outputs
 
+#MacOS
+.DS_Store
+
 # AI
 .claude
 

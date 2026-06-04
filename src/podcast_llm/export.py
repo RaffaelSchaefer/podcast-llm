@@ -25,6 +25,8 @@ def write_transcript(path: Path, outline: EpisodeOutline, turns_by_segment: list
         lines.extend([f"## {segment.title}", ""])
         for turn in turns:
             lines.append(f"**{turn.speaker}:** {turn.text}")
+            if turn.delivery_instruction:
+                lines.append(f"_Delivery: {turn.delivery_instruction}_")
             lines.append("")
     path.write_text("\n".join(lines).strip() + "\n", encoding="utf-8")
 

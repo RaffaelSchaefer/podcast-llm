@@ -1,7 +1,7 @@
 import numpy as np
 
-from podcast_llm.export import concat_audio, maybe_export_mp3, write_wav
-from podcast_llm.models import GenerationRequest
+from podcast_llm.export import concat_audio, maybe_export_mp3, write_transcript, write_wav
+from podcast_llm.models import DialogueTurn, EpisodeOutline, GenerationRequest, OutlineSegment
 
 
 def test_concat_audio_inserts_silence_between_chunks() -> None:
@@ -34,6 +34,29 @@ def test_write_wav_preserves_float_audio(monkeypatch, tmp_path) -> None:
     write_wav(path, audio, 44_100)
 
     assert calls == [((path, audio, 44_100), {"subtype": "FLOAT"})]
+
+
+def test_write_transcript_includes_delivery_instructions(tmp_path) -> None:
+    path = tmp_path / "transcript.md"
+    outline = EpisodeOutline(
+        title="Episode",
+        segments=[OutlineSegment(title="Opening", summary="Set context", target_minutes=1)],
+    )
+    turns = [
+        [
+            DialogueTurn(
+                speaker="Host A",
+                text="Here is the part that should sound tense.",
+                delivery_instruction="slow and serious, with restrained tension",
+            )
+        ]
+    ]
+
+    write_transcript(path, outline, turns)
+
+    transcript = path.read_text(encoding="utf-8")
+    assert "**Host A:** Here is the part that should sound tense." in transcript
+    assert "_Delivery: slow and serious, with restrained tension_" in transcript
 
 
 def test_maybe_export_mp3_uses_highest_quality_lame_vbr(monkeypatch, tmp_path) -> None:
