@@ -156,6 +156,17 @@ PhaseChecklist {
 
 #gen_bar {
     width: 100%;
+    margin-bottom: 0;
+}
+
+#round_label {
+    color: $text-muted;
+    height: 1;
+    margin-top: 1;
+}
+
+#round_bar {
+    width: 100%;
     margin-bottom: 1;
 }
 

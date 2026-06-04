@@ -22,6 +22,9 @@ class ProgressEvent:
     message: str = ""
     current: int = 0  # 0 means indeterminate
     total: int = 0  # 0 until the total is known
+    seg: int = 0  # segment index (1-based) during synthesize, 0 = unset
+    round_current: int = 0  # turn index within the current segment
+    round_total: int = 0  # total turns in the current segment
     speaker: str | None = None
 
 

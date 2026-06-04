@@ -43,6 +43,7 @@ class GenerationScreen(Screen):
         self._request = request
         self._auto_start = auto_start
         self._output_dir: Path | None = None
+        self._seg_count: int = 0
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=False)
@@ -50,6 +51,8 @@ class GenerationScreen(Screen):
             yield Static("Generating your podcast…", id="gen_title")
             yield PhaseChecklist(id="phases")
             yield ProgressBar(id="gen_bar", show_eta=False)
+            yield Static("", id="round_label")
+            yield ProgressBar(id="round_bar", show_eta=False)
             yield RichLog(id="gen_log", markup=True, wrap=True)
             with Horizontal(id="gen_nav"):
                 yield Button("Open folder", id="gen_open", variant="primary", disabled=True)
@@ -59,6 +62,7 @@ class GenerationScreen(Screen):
 
     def on_mount(self) -> None:
         self.query_one("#gen_bar", ProgressBar).update(total=None)
+        self.query_one("#round_bar", ProgressBar).update(total=None)
         if self._auto_start:
             try:
                 preflight_qwen_runtime()
@@ -86,12 +90,21 @@ class GenerationScreen(Screen):
         self.query_one("#phases", PhaseChecklist).set_phase(event.phase)
 
         bar = self.query_one("#gen_bar", ProgressBar)
+        round_bar = self.query_one("#round_bar", ProgressBar)
+        round_label = self.query_one("#round_label", Static)
+
         if event.phase == "synthesize" and event.total > 0:
-            # The only phase with a real total: show determinate progress.
             bar.update(total=event.total, progress=event.current)
+            if event.round_total > 0:
+                round_bar.update(total=event.round_total, progress=event.round_current)
+                seg_display = f"{event.seg} / {self._seg_count}" if self._seg_count else str(event.seg)
+                round_label.update(f"[dim]Segment {seg_display}[/dim]")
         else:
-            # Keep the bar pulsing so it never looks frozen on the other phases.
+            if event.phase == "script" and event.total > 0:
+                self._seg_count = event.total
             bar.update(total=None)
+            round_bar.update(total=None)
+            round_label.update("")
 
         if event.message:
             self.query_one("#gen_log", RichLog).write(f"[dim]{label}[/dim]  {event.message}")
@@ -104,6 +117,9 @@ class GenerationScreen(Screen):
         bar = self.query_one("#gen_bar", ProgressBar)
         if bar.total:
             bar.update(progress=bar.total)
+        round_bar = self.query_one("#round_bar", ProgressBar)
+        if round_bar.total:
+            round_bar.update(progress=round_bar.total)
 
         log = self.query_one("#gen_log", RichLog)
         log.write(f"[green b]Done.[/green b] Saved to {result.output_dir}")

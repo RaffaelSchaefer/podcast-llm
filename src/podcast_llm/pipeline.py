@@ -52,9 +52,7 @@ class PodcastPipeline:
         emit(ProgressEvent("script", f"Outline ready — {segment_count} segments to write.", 0, segment_count))
 
         turns_by_segment: list[list[DialogueTurn]] = []
-        audio_chunks = []
         prior_context = ""
-        turn_index = 0
         total_turns = 0
 
         for segment_index, segment in enumerate(outline.segments, start=1):
@@ -64,7 +62,10 @@ class PodcastPipeline:
             total_turns += len(turns)
             emit(ProgressEvent("script", f"Scripted segment {segment_index}/{segment_count}: {segment.title}", segment_index, segment_count))
 
-            for turn in turns:
+        audio_chunks = []
+        turn_index = 0
+        for segment_index, turns in enumerate(turns_by_segment, start=1):
+            for turn_in_seg, turn in enumerate(turns, start=1):
                 turn_index += 1
                 chunk = self.synthesizer.synthesize_turn(turn, request)
                 audio_chunks.append(chunk)
@@ -74,6 +75,9 @@ class PodcastPipeline:
                         f"Synthesized turn {turn_index} ({turn.speaker})",
                         turn_index,
                         total_turns,
+                        seg=segment_index,
+                        round_current=turn_in_seg,
+                        round_total=len(turns),
                         speaker=turn.speaker,
                     )
                 )
