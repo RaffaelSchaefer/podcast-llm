@@ -170,6 +170,19 @@ PhaseChecklist {
     margin-bottom: 1;
 }
 
+#live_panel {
+    height: 12;
+    border: round $accent;
+    border-title-color: $accent;
+    border-title-style: bold;
+    margin-bottom: 1;
+}
+
+#live_text {
+    height: auto;
+    padding: 0 1;
+}
+
 #gen_log {
     height: 1fr;
     border: round $primary;

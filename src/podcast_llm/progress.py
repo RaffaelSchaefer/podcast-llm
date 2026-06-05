@@ -3,6 +3,8 @@ from dataclasses import dataclass
 from typing import Literal
 
 Phase = Literal["parse", "outline", "script", "synthesize", "export", "done"]
+ProgressKind = Literal["status", "text_reset", "text_fragment", "text_replace"]
+TextScope = Literal["outline", "script"]
 
 PHASE_ORDER: tuple[Phase, ...] = ("parse", "outline", "script", "synthesize", "export", "done")
 
@@ -26,6 +28,11 @@ class ProgressEvent:
     round_current: int = 0  # turn index within the current segment
     round_total: int = 0  # total turns in the current segment
     speaker: str | None = None
+    delivery_instruction: str = ""
+    kind: ProgressKind = "status"
+    text: str = ""
+    text_scope: TextScope | None = None
+    segment_title: str = ""
 
 
 ProgressCallback = Callable[[ProgressEvent], None]

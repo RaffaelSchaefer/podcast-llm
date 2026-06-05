@@ -23,7 +23,10 @@ class FakeParser:
 
 
 class FakeProvider:
-    def make_outline(self, parsed_sources, request):
+    def make_outline(self, parsed_sources, request, text_progress=None):
+        if text_progress is not None:
+            text_progress('{"title":"Test Episode",')
+            text_progress('"segments":[{"title":"Part One"')
         return EpisodeOutline(
             title="Test Episode",
             segments=[
@@ -42,7 +45,10 @@ class FakeProvider:
             ],
         )
 
-    def make_script_segment(self, outline_segment, prior_context, request):
+    def make_script_segment(self, outline_segment, prior_context, request, text_progress=None):
+        if text_progress is not None:
+            text_progress('{"turns":[{"speaker":"Host A",')
+            text_progress(f'"text":"{outline_segment.title} from A"')
         return [
             DialogueTurn(speaker="Host A", text=f"{outline_segment.title} from A"),
             DialogueTurn(speaker="Host B", text=f"{outline_segment.title} from B"),
@@ -124,3 +130,31 @@ def test_pipeline_deletes_intermediate_wav_after_mp3_export(tmp_path: Path, monk
     assert result.mp3_path.exists()
     assert not (result.output_dir / "episode.wav").exists()
     assert not (result.output_dir / "segments").exists()
+
+
+def test_pipeline_emits_live_text_generation_events(tmp_path: Path) -> None:
+    source = tmp_path / "notes.md"
+    source.write_text("# Notes\n", encoding="utf-8")
+    request = GenerationRequest(
+        source_paths=[source],
+        language="en",
+        duration_minutes=2,
+        output_dir=tmp_path / "outputs",
+    )
+    pipeline = PodcastPipeline(
+        parser=FakeParser(),
+        llm_provider=FakeProvider(),
+        synthesizer=FakeSynthesizer(),
+    )
+    events = []
+
+    pipeline.generate(request, events.append)
+
+    text_events = [event for event in events if event.kind.startswith("text_")]
+    assert [event.kind for event in text_events[:2]] == ["text_reset", "text_fragment"]
+    assert text_events[0].text_scope == "outline"
+    assert any(event.text_scope == "script" and event.kind == "text_fragment" for event in text_events)
+    assert any(
+        event.kind == "text_replace" and "Host A: Part One from A" in event.text
+        for event in text_events
+    )

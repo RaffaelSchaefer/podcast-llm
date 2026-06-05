@@ -2,7 +2,7 @@ from pathlib import Path
 
 from .export import concat_audio, maybe_export_mp3, slugify, write_json, write_transcript, write_wav
 from .llm import LLMProvider
-from .models import DialogueTurn, GenerationRequest, GenerationResult
+from .models import DialogueTurn, EpisodeOutline, GenerationRequest, GenerationResult
 from .parser import MarkItDownParser
 from .progress import ProgressCallback, ProgressEvent
 from .tts import QwenSynthesizer
@@ -39,7 +39,22 @@ class PodcastPipeline:
         parsed_sources = self.parser.parse(request.source_paths, request=request)
 
         emit(ProgressEvent("outline", "Designing the episode outline…"))
-        outline = self.llm_provider.make_outline(parsed_sources, request)
+        emit(ProgressEvent("outline", kind="text_reset", text_scope="outline"))
+        outline = self.llm_provider.make_outline(
+            parsed_sources,
+            request,
+            text_progress=lambda text: emit(
+                ProgressEvent("outline", kind="text_fragment", text=text, text_scope="outline")
+            ),
+        )
+        emit(
+            ProgressEvent(
+                "outline",
+                kind="text_replace",
+                text=_format_outline(outline),
+                text_scope="outline",
+            )
+        )
 
         output_dir = self._unique_output_dir(request.output_dir / slugify(outline.title))
         metadata_dir = output_dir / "metadata"
@@ -56,10 +71,43 @@ class PodcastPipeline:
         total_turns = 0
 
         for segment_index, segment in enumerate(outline.segments, start=1):
-            turns = self.llm_provider.make_script_segment(segment, prior_context, request)
+            emit(
+                ProgressEvent(
+                    "script",
+                    kind="text_reset",
+                    text_scope="script",
+                    seg=segment_index,
+                    segment_title=segment.title,
+                )
+            )
+            turns = self.llm_provider.make_script_segment(
+                segment,
+                prior_context,
+                request,
+                text_progress=lambda text, segment_index=segment_index, segment=segment: emit(
+                    ProgressEvent(
+                        "script",
+                        kind="text_fragment",
+                        text=text,
+                        text_scope="script",
+                        seg=segment_index,
+                        segment_title=segment.title,
+                    )
+                ),
+            )
             turns_by_segment.append(turns)
             prior_context = " ".join(turn.text for turn in turns[-4:])
             total_turns += len(turns)
+            emit(
+                ProgressEvent(
+                    "script",
+                    kind="text_replace",
+                    text=_format_turns(turns),
+                    text_scope="script",
+                    seg=segment_index,
+                    segment_title=segment.title,
+                )
+            )
             emit(ProgressEvent("script", f"Scripted segment {segment_index}/{segment_count}: {segment.title}", segment_index, segment_count))
 
         audio_chunks = []
@@ -67,20 +115,22 @@ class PodcastPipeline:
         for segment_index, turns in enumerate(turns_by_segment, start=1):
             for turn_in_seg, turn in enumerate(turns, start=1):
                 turn_index += 1
-                chunk = self.synthesizer.synthesize_turn(turn, request)
-                audio_chunks.append(chunk)
                 emit(
                     ProgressEvent(
                         "synthesize",
-                        f"Synthesized turn {turn_index} ({turn.speaker})",
+                        f"Turn {turn_index}/{total_turns}",
                         turn_index,
                         total_turns,
                         seg=segment_index,
                         round_current=turn_in_seg,
                         round_total=len(turns),
                         speaker=turn.speaker,
+                        delivery_instruction=turn.delivery_instruction,
+                        text=turn.text,
                     )
                 )
+                chunk = self.synthesizer.synthesize_turn(turn, request)
+                audio_chunks.append(chunk)
 
         emit(ProgressEvent("export", "Writing transcript and assembling the episode…"))
         transcript_path = metadata_dir / "transcript.md"
@@ -122,3 +172,14 @@ class PodcastPipeline:
             if not candidate.exists():
                 return candidate
             suffix += 1
+
+
+def _format_outline(outline: EpisodeOutline) -> str:
+    lines = [outline.title]
+    for index, segment in enumerate(outline.segments, start=1):
+        lines.append(f"{index}. {segment.title} - {segment.summary}")
+    return "\n".join(lines)
+
+
+def _format_turns(turns: list[DialogueTurn]) -> str:
+    return "\n\n".join(f"{turn.speaker}: {turn.text}" for turn in turns)

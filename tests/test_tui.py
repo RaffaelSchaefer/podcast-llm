@@ -492,6 +492,62 @@ async def test_generation_screen_keeps_bar_indeterminate_off_synthesize(tmp_path
 
 
 @pytest.mark.anyio
+async def test_generation_screen_renders_live_script_fragments(tmp_path: Path) -> None:
+    request = PodcastDraft(source_paths=[tmp_path / "notes.md"], language="en", duration_minutes=2).to_request()
+    app = PodcastWizard()
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        screen = GenerationScreen(request, auto_start=False)
+        app.push_screen(screen)
+        await pilot.pause()
+
+        screen.on_progress_update(
+            ProgressUpdate(
+                ProgressEvent(
+                    "script",
+                    kind="text_reset",
+                    text_scope="script",
+                    seg=1,
+                    segment_title="Intro",
+                )
+            )
+        )
+        screen.on_progress_update(
+            ProgressUpdate(
+                ProgressEvent(
+                    "script",
+                    kind="text_fragment",
+                    text='{"turns":[{"speaker":"Host A","text":"Welcome to this"',
+                    text_scope="script",
+                    seg=1,
+                    segment_title="Intro",
+                )
+            )
+        )
+        await pilot.pause()
+
+        live_text = screen.query_one("#live_text", Static)
+        assert "Host A" in str(live_text.content) and "Welcome to this" in str(live_text.content)
+
+        screen.on_progress_update(
+            ProgressUpdate(
+                ProgressEvent(
+                    "script",
+                    kind="text_replace",
+                    text="Host A: Welcome to this episode.",
+                    text_scope="script",
+                    seg=1,
+                    segment_title="Intro",
+                )
+            )
+        )
+        await pilot.pause()
+
+        assert "Host A" in str(live_text.content) and "Welcome to this episode." in str(live_text.content)
+
+
+@pytest.mark.anyio
 async def test_generation_failure_enables_restart_only(tmp_path: Path) -> None:
     request = PodcastDraft(source_paths=[tmp_path / "notes.md"], language="en", duration_minutes=2).to_request()
     app = PodcastWizard()

@@ -1,4 +1,5 @@
 import json
+from collections.abc import Callable
 from typing import Protocol
 
 import lmstudio as lms
@@ -18,7 +19,12 @@ DEFAULT_LM_STUDIO_HOST = "localhost:1234"
 
 
 class LLMProvider(Protocol):
-    def make_outline(self, parsed_sources: ParsedSources, request: GenerationRequest) -> EpisodeOutline:
+    def make_outline(
+        self,
+        parsed_sources: ParsedSources,
+        request: GenerationRequest,
+        text_progress: Callable[[str], None] | None = None,
+    ) -> EpisodeOutline:
         ...
 
     def make_script_segment(
@@ -26,6 +32,7 @@ class LLMProvider(Protocol):
         outline_segment: OutlineSegment,
         prior_context: str,
         request: GenerationRequest,
+        text_progress: Callable[[str], None] | None = None,
     ) -> list[DialogueTurn]:
         ...
 
@@ -51,7 +58,12 @@ class LMStudioProvider:
             return
         self.model = _resolve_model(model_key, host)
 
-    def make_outline(self, parsed_sources: ParsedSources, request: GenerationRequest) -> EpisodeOutline:
+    def make_outline(
+        self,
+        parsed_sources: ParsedSources,
+        request: GenerationRequest,
+        text_progress: Callable[[str], None] | None = None,
+    ) -> EpisodeOutline:
         custom_instructions = _custom_instructions_prompt(request)
         content = self._chat_json(
             schema=_episode_outline_schema(),
@@ -77,6 +89,7 @@ class LMStudioProvider:
                     ),
                 },
             ],
+            text_progress=text_progress,
         )
         try:
             return EpisodeOutline.model_validate_json(content)
@@ -88,6 +101,7 @@ class LMStudioProvider:
         outline_segment: OutlineSegment,
         prior_context: str,
         request: GenerationRequest,
+        text_progress: Callable[[str], None] | None = None,
     ) -> list[DialogueTurn]:
         custom_instructions = _custom_instructions_prompt(request)
         content = self._chat_json(
@@ -124,6 +138,7 @@ class LMStudioProvider:
                     ),
                 },
             ],
+            text_progress=text_progress,
         )
         try:
             payload = json.loads(content)
@@ -132,14 +147,39 @@ class LMStudioProvider:
         except (TypeError, ValueError, ValidationError) as exc:
             raise LLMOutputError(f"Invalid script JSON: {exc}") from exc
 
-    def _chat_json(self, schema: dict, messages: list[dict[str, str]]) -> str:
+    def _chat_json(
+        self,
+        schema: dict,
+        messages: list[dict[str, str]],
+        text_progress: Callable[[str], None] | None = None,
+    ) -> str:
         # The SDK accepts this history dict directly (it runs it through
         # ``Chat.from_history`` internally), so we don't build a Chat ourselves.
         history = {"messages": [{"role": m["role"], "content": m["content"]} for m in messages]}
-        result = self.model.respond(
-            history,
-            response_format={"type": "json", "jsonSchema": schema},
-        )
+        response_format = {"type": "json", "jsonSchema": schema}
+
+        def on_fragment(fragment: object) -> None:
+            if text_progress is None:
+                return
+            content = getattr(fragment, "content", "")
+            if content:
+                text_progress(str(content))
+
+        if text_progress is not None and hasattr(self.model, "respond_stream"):
+            stream = self.model.respond_stream(
+                history,
+                response_format=response_format,
+                on_prediction_fragment=on_fragment,
+            )
+            for _ in stream:
+                pass
+            result = stream.result()
+        else:
+            result = self.model.respond(
+                history,
+                response_format=response_format,
+                on_prediction_fragment=on_fragment if text_progress is not None else None,
+            )
         content = result.content
         if not content:
             raise LLMOutputError("LM Studio returned an empty response")

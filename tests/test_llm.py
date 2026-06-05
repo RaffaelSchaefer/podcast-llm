@@ -18,6 +18,27 @@ class FakeResult:
         self.content = content
 
 
+class FakeFragment:
+    def __init__(self, content: str) -> None:
+        self.content = content
+
+
+class FakeStream:
+    def __init__(self, fragments: list[str], on_prediction_fragment=None) -> None:
+        self.fragments = fragments
+        self.on_prediction_fragment = on_prediction_fragment
+
+    def __iter__(self):
+        for content in self.fragments:
+            fragment = FakeFragment(content)
+            if self.on_prediction_fragment is not None:
+                self.on_prediction_fragment(fragment)
+            yield fragment
+
+    def result(self) -> FakeResult:
+        return FakeResult("".join(self.fragments))
+
+
 class FakeModel:
     """Stand-in for an LM Studio model handle exposing ``respond``."""
 
@@ -28,6 +49,22 @@ class FakeModel:
     def respond(self, history, *, response_format=None, **kwargs):
         self.calls.append({"history": history, "response_format": response_format})
         return FakeResult(self.content)
+
+
+class FakeStreamingModel(FakeModel):
+    def __init__(self, fragments: list[str]) -> None:
+        super().__init__("".join(fragments))
+        self.fragments = fragments
+
+    def respond_stream(self, history, *, response_format=None, on_prediction_fragment=None, **kwargs):
+        self.calls.append(
+            {
+                "history": history,
+                "response_format": response_format,
+                "on_prediction_fragment": on_prediction_fragment,
+            }
+        )
+        return FakeStream(self.fragments, on_prediction_fragment)
 
 
 def _last_user_prompt(model: FakeModel) -> str:
@@ -61,6 +98,25 @@ def test_provider_requests_structured_outline(tmp_path: Path) -> None:
         "source_focus",
     ]
     assert "Return JSON" in _last_user_prompt(model)
+
+
+def test_provider_streams_structured_outline_fragments(tmp_path: Path) -> None:
+    model = FakeStreamingModel(
+        [
+            '{"title":"Episode","segments":[',
+            '{"title":"Intro","summary":"Set context","target_minutes":2,"source_focus":["notes"]}',
+            "]}",
+        ]
+    )
+    provider = LMStudioProvider(model=model)
+    parsed = ParsedSources(markdown="# Notes\n", sources=[])
+    fragments: list[str] = []
+
+    outline = provider.make_outline(parsed, make_request(tmp_path), text_progress=fragments.append)
+
+    assert outline.title == "Episode"
+    assert fragments == model.fragments
+    assert model.calls[0]["on_prediction_fragment"] is not None
 
 
 def test_provider_includes_custom_instructions_in_outline_prompt(tmp_path: Path) -> None:
