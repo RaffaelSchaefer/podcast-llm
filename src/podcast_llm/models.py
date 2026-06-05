@@ -24,6 +24,7 @@ class GenerationRequest(BaseModel):
     lmstudio_host: str | None = Field(default_factory=lambda: os.getenv("PODCAST_LLM_HOST") or None)
     custom_instructions: str = ""
     export_format: ExportFormat = "wav"
+    enable_background_music: bool = False
     output_dir: Path = Path("outputs")
 
 

@@ -24,6 +24,7 @@ class PodcastDraft:
     lmstudio_host: str | None = None
     lmstudio_model: str | None = field(default_factory=lambda: os.getenv("PODCAST_LLM_MODEL") or None)
     export_format: str = "wav"
+    enable_background_music: bool = False
     preset_id: str | None = None
 
     def to_request(self) -> GenerationRequest:
@@ -44,5 +45,6 @@ class PodcastDraft:
             qwen_tts_model=self.qwen_tts_model,
             custom_instructions=self.custom_instructions,
             export_format=self.export_format,
+            enable_background_music=self.enable_background_music,
             **overrides,
         )

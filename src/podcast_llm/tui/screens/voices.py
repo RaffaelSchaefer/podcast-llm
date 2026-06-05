@@ -1,7 +1,7 @@
 from textual import on, work
 from textual.app import ComposeResult
 from textual.containers import Horizontal
-from textual.widgets import Button, Input, Label, Select
+from textual.widgets import Button, Checkbox, Input, Label, Select
 
 from ...llm import list_available_models
 from ...voices import QWEN_VOICE_NAMES, voice_select_options
@@ -30,6 +30,7 @@ class VoicesScreen(WizardScreen):
         yield Select(TTS_MODE_OPTIONS, value="auto", allow_blank=False, id="tts_mode")
         yield Label("Export format", classes="section-label")
         yield Select(EXPORT_OPTIONS, value="wav", allow_blank=False, id="export")
+        yield Checkbox("Quiet dynamic background music", id="background_music")
         yield Label("LM Studio host (optional, blank uses the env / default)", classes="section-label")
         yield Input(placeholder="host:port, e.g. localhost:1234", id="lmstudio_host")
         yield Label("LM Studio model", classes="section-label")
@@ -52,6 +53,7 @@ class VoicesScreen(WizardScreen):
         self._set_voice("host_b", draft.host_b_voice)
         self.query_one("#tts_mode", Select).value = draft.tts_mode
         self.query_one("#export", Select).value = draft.export_format
+        self.query_one("#background_music", Checkbox).value = draft.enable_background_music
         self.query_one("#lmstudio_host", Input).value = draft.lmstudio_host or ""
         self._set_model_options([], draft.lmstudio_model)
 
@@ -61,6 +63,7 @@ class VoicesScreen(WizardScreen):
         draft.host_b_voice = self._read_voice("host_b")
         draft.tts_mode = str(self.query_one("#tts_mode", Select).value or "auto")
         draft.export_format = str(self.query_one("#export", Select).value or "wav")
+        draft.enable_background_music = bool(self.query_one("#background_music", Checkbox).value)
         draft.lmstudio_host = self.query_one("#lmstudio_host", Input).value.strip() or None
         model = self.query_one("#lmstudio_model", Select).value
         draft.lmstudio_model = None if model in (None, CURRENT_MODEL) else str(model)

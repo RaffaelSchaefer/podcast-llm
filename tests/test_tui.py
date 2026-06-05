@@ -1,7 +1,7 @@
 from pathlib import Path
 
 import pytest
-from textual.widgets import Button, Input, ProgressBar, RadioButton, Select, Static, TextArea
+from textual.widgets import Button, Checkbox, Input, ProgressBar, RadioButton, Select, Static, TextArea
 
 from podcast_llm.models import GenerationResult
 from podcast_llm.presets import preset_by_id
@@ -58,6 +58,7 @@ async def test_wizard_builds_generation_request_from_all_fields(
         voices.query_one("#host_b", Select).value = "Serena"
         voices.query_one("#tts_mode", Select).value = "apple"
         voices.query_one("#export", Select).value = "mp3"
+        voices.query_one("#background_music", Checkbox).value = True
         voices.action_next()
         await pilot.pause()
 
@@ -74,6 +75,7 @@ async def test_wizard_builds_generation_request_from_all_fields(
     assert request.lmstudio_model == "qwen/qwen3.6-35b-a3b"
     assert request.export_format == "mp3"
     assert request.custom_instructions == "Keep it lively but technically precise."
+    assert request.enable_background_music is True
 
 
 @pytest.mark.anyio
@@ -428,6 +430,30 @@ async def test_review_summary_shows_env_llm_connection(
     assert "| Model | qwen/qwen3.6-35b-a3b |" in summary
     assert "| TTS mode | auto |" in summary
     assert "| TTS model | Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice |" in summary
+    assert "| Quiet dynamic background music | No |" in summary
+
+
+@pytest.mark.anyio
+async def test_review_summary_shows_enabled_background_music(tmp_path: Path) -> None:
+    source = _write_source(tmp_path, "notes.md")
+    app = PodcastWizard()
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        app.screen.add_source(source)
+        app.draft.enable_background_music = True
+        app.screen.action_next()
+        await pilot.pause()
+        app.screen.action_next()
+        await pilot.pause()
+        app.screen.action_next()
+        await pilot.pause()
+
+        screen = app.screen
+        assert isinstance(screen, ReviewScreen)
+        summary = screen._summary()
+
+    assert "| Quiet dynamic background music | Yes |" in summary
 
 
 @pytest.mark.anyio

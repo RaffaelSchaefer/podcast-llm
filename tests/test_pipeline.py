@@ -62,6 +62,23 @@ class FakeSynthesizer:
         return np.zeros((10,), dtype=np.float32)
 
 
+class FakeMusicGenerator:
+    model_id = "fake/music"
+
+    def __init__(self) -> None:
+        self.calls = []
+
+    def generate(self, prompt: str, duration_seconds: float, sample_rate: int) -> np.ndarray:
+        self.calls.append(
+            {
+                "prompt": prompt,
+                "duration_seconds": duration_seconds,
+                "sample_rate": sample_rate,
+            }
+        )
+        return np.ones((max(1, round(duration_seconds * sample_rate)),), dtype=np.float32)
+
+
 def test_pipeline_writes_expected_outputs(tmp_path: Path) -> None:
     source = tmp_path / "notes.md"
     source.write_text("# Notes\n", encoding="utf-8")
@@ -98,6 +115,88 @@ def test_pipeline_writes_expected_outputs(tmp_path: Path) -> None:
     expected_seams = 3 * round(FakeSynthesizer.sample_rate * 0.25)
     assert sample_rate == FakeSynthesizer.sample_rate
     assert len(audio) == 4 * 10 + expected_seams
+
+
+def test_pipeline_skips_background_music_when_disabled(tmp_path: Path) -> None:
+    source = tmp_path / "notes.md"
+    source.write_text("# Notes\n", encoding="utf-8")
+    request = GenerationRequest(
+        source_paths=[source],
+        language="en",
+        duration_minutes=2,
+        output_dir=tmp_path / "outputs",
+    )
+    music_generator = FakeMusicGenerator()
+    pipeline = PodcastPipeline(
+        parser=FakeParser(),
+        llm_provider=FakeProvider(),
+        synthesizer=FakeSynthesizer(),
+        music_generator=music_generator,
+    )
+
+    result = pipeline.generate(request)
+
+    assert music_generator.calls == []
+    assert not (result.output_dir / "metadata" / "background_music.json").exists()
+
+
+def test_pipeline_generates_section_background_music_metadata(tmp_path: Path) -> None:
+    source = tmp_path / "notes.md"
+    source.write_text("# Notes\n", encoding="utf-8")
+    request = GenerationRequest(
+        source_paths=[source],
+        language="en",
+        duration_minutes=2,
+        enable_background_music=True,
+        output_dir=tmp_path / "outputs",
+    )
+    music_generator = FakeMusicGenerator()
+    pipeline = PodcastPipeline(
+        parser=FakeParser(),
+        llm_provider=FakeProvider(),
+        synthesizer=FakeSynthesizer(),
+        music_generator=music_generator,
+    )
+
+    result = pipeline.generate(request)
+
+    assert len(music_generator.calls) == 2
+    assert all("quiet instrumental background music" in call["prompt"] for call in music_generator.calls)
+    metadata = (result.output_dir / "metadata" / "background_music.json").read_text(encoding="utf-8")
+    assert '"model_id": "fake/music"' in metadata
+    assert '"title": "Part One"' in metadata
+    assert '"title": "Part Two"' in metadata
+    audio, _sample_rate = sf.read(result.output_dir / "episode.wav", dtype="float32")
+    assert np.max(audio) > 0
+
+
+def test_pipeline_fails_when_enabled_background_music_generation_fails(tmp_path: Path) -> None:
+    class FailingMusicGenerator(FakeMusicGenerator):
+        def generate(self, prompt: str, duration_seconds: float, sample_rate: int) -> np.ndarray:
+            raise RuntimeError("ACE-Step failed")
+
+    source = tmp_path / "notes.md"
+    source.write_text("# Notes\n", encoding="utf-8")
+    request = GenerationRequest(
+        source_paths=[source],
+        language="en",
+        duration_minutes=2,
+        enable_background_music=True,
+        output_dir=tmp_path / "outputs",
+    )
+    pipeline = PodcastPipeline(
+        parser=FakeParser(),
+        llm_provider=FakeProvider(),
+        synthesizer=FakeSynthesizer(),
+        music_generator=FailingMusicGenerator(),
+    )
+
+    try:
+        pipeline.generate(request)
+    except RuntimeError as exc:
+        assert "ACE-Step failed" in str(exc)
+    else:
+        raise AssertionError("Expected background music failure to propagate")
 
 
 def test_pipeline_deletes_intermediate_wav_after_mp3_export(tmp_path: Path, monkeypatch) -> None:

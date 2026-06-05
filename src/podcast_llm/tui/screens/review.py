@@ -51,6 +51,7 @@ class ReviewScreen(WizardScreen):
             f"| TTS mode | {draft.tts_mode} |",
             f"| TTS model | {draft.qwen_tts_model} |",
             f"| Export | {draft.export_format.upper()} |",
+            f"| Quiet dynamic background music | {'Yes' if draft.enable_background_music else 'No'} |",
             f"| LLM endpoint | {endpoint} |",
             f"| Model | {model} |",
         ]

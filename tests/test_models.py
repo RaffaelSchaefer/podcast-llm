@@ -21,6 +21,21 @@ def test_generation_request_applies_defaults(tmp_path: Path) -> None:
     assert request.lmstudio_host is None
     assert request.export_format == "wav"
     assert request.custom_instructions == ""
+    assert request.enable_background_music is False
+
+
+def test_generation_request_accepts_background_music_flag(tmp_path: Path) -> None:
+    source = tmp_path / "notes.md"
+    source.write_text("# Notes\n", encoding="utf-8")
+
+    request = GenerationRequest(
+        source_paths=[source],
+        language="en",
+        duration_minutes=8,
+        enable_background_music=True,
+    )
+
+    assert request.enable_background_music is True
 
 
 def test_generation_request_reads_lmstudio_host_from_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

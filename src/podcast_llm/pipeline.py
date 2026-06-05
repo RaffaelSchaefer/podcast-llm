@@ -1,5 +1,16 @@
 from pathlib import Path
+from typing import Any
 
+from .background_music import (
+    BASE_BACKGROUND_MUSIC_PROMPT,
+    DEFAULT_FADE_SECONDS,
+    DEFAULT_MUSIC_GAIN,
+    AceStepMusicGenerator,
+    SectionMusicSpec,
+    apply_edge_fades,
+    build_section_prompt,
+    mix_background_music,
+)
 from .export import concat_audio, maybe_export_mp3, slugify, write_json, write_transcript, write_wav
 from .llm import LLMProvider
 from .models import DialogueTurn, EpisodeOutline, GenerationRequest, GenerationResult
@@ -14,10 +25,12 @@ class PodcastPipeline:
         parser: MarkItDownParser | None = None,
         llm_provider: LLMProvider | None = None,
         synthesizer: QwenSynthesizer | None = None,
+        music_generator: Any | None = None,
     ) -> None:
         self.parser = parser or MarkItDownParser()
         self.llm_provider = llm_provider
         self.synthesizer = synthesizer
+        self.music_generator = music_generator
 
     def generate(
         self,
@@ -110,9 +123,10 @@ class PodcastPipeline:
             )
             emit(ProgressEvent("script", f"Scripted segment {segment_index}/{segment_count}: {segment.title}", segment_index, segment_count))
 
-        audio_chunks = []
+        audio_chunks_by_segment: list[list] = []
         turn_index = 0
         for segment_index, turns in enumerate(turns_by_segment, start=1):
+            segment_chunks = []
             for turn_in_seg, turn in enumerate(turns, start=1):
                 turn_index += 1
                 emit(
@@ -130,14 +144,23 @@ class PodcastPipeline:
                     )
                 )
                 chunk = self.synthesizer.synthesize_turn(turn, request)
-                audio_chunks.append(chunk)
+                segment_chunks.append(chunk)
+            audio_chunks_by_segment.append(segment_chunks)
 
         emit(ProgressEvent("export", "Writing transcript and assembling the episode…"))
         transcript_path = metadata_dir / "transcript.md"
         write_transcript(transcript_path, outline, turns_by_segment)
 
         wav_path = output_dir / "episode.wav"
-        write_wav(wav_path, concat_audio(audio_chunks, self.synthesizer.sample_rate), self.synthesizer.sample_rate)
+        episode_audio = self._assemble_episode_audio(
+            request,
+            outline,
+            turns_by_segment,
+            audio_chunks_by_segment,
+            metadata_dir,
+            emit,
+        )
+        write_wav(wav_path, episode_audio, self.synthesizer.sample_rate)
         mp3_path = maybe_export_mp3(wav_path, output_dir / "episode.mp3", request)
         audio_path = mp3_path or wav_path
         if mp3_path is not None and wav_path.exists():
@@ -172,6 +195,68 @@ class PodcastPipeline:
             if not candidate.exists():
                 return candidate
             suffix += 1
+
+    def _assemble_episode_audio(
+        self,
+        request: GenerationRequest,
+        outline: EpisodeOutline,
+        turns_by_segment: list[list[DialogueTurn]],
+        audio_chunks_by_segment: list[list],
+        metadata_dir: Path,
+        emit,
+    ):
+        sample_rate = self.synthesizer.sample_rate
+        if not request.enable_background_music:
+            return concat_audio(
+                [chunk for segment_chunks in audio_chunks_by_segment for chunk in segment_chunks],
+                sample_rate,
+            )
+
+        generator = self.music_generator or AceStepMusicGenerator()
+        section_specs: list[SectionMusicSpec] = []
+        mixed_sections = []
+        total_sections = len(audio_chunks_by_segment)
+
+        for index, (segment, turns, chunks) in enumerate(
+            zip(outline.segments, turns_by_segment, audio_chunks_by_segment, strict=True),
+            start=1,
+        ):
+            section_speech = concat_audio(chunks, sample_rate)
+            duration_seconds = len(section_speech) / sample_rate if sample_rate else 0.0
+            prompt = build_section_prompt(segment, turns)
+            spec = SectionMusicSpec(
+                index=index,
+                title=segment.title,
+                prompt=prompt,
+                duration_seconds=duration_seconds,
+            )
+            section_specs.append(spec)
+            emit(
+                ProgressEvent(
+                    "export",
+                    f"Generating background music for section {index}/{total_sections}...",
+                    index,
+                    total_sections,
+                )
+            )
+            music = generator.generate(prompt, duration_seconds, sample_rate)
+            music = apply_edge_fades(music, sample_rate, DEFAULT_FADE_SECONDS)
+            mixed_sections.append(mix_background_music(section_speech, music, DEFAULT_MUSIC_GAIN))
+
+        emit(ProgressEvent("export", "Mixing background music..."))
+        write_json(
+            metadata_dir / "background_music.json",
+            {
+                "enabled": True,
+                "model_id": getattr(generator, "model_id", "unknown"),
+                "base_prompt": BASE_BACKGROUND_MUSIC_PROMPT,
+                "gain": DEFAULT_MUSIC_GAIN,
+                "fade_seconds": DEFAULT_FADE_SECONDS,
+                "sample_rate": sample_rate,
+                "sections": [spec.to_metadata() for spec in section_specs],
+            },
+        )
+        return concat_audio(mixed_sections, sample_rate)
 
 
 def _format_outline(outline: EpisodeOutline) -> str:
