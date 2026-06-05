@@ -20,6 +20,7 @@ outputs
 
 # AI
 .claude
+.worktrees/
 
 # IDE
 .vscode/
