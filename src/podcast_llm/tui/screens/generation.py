@@ -61,8 +61,9 @@ class GenerationScreen(Screen):
         yield Footer()
 
     def on_mount(self) -> None:
-        self.query_one("#gen_bar", ProgressBar).update(total=None)
-        self.query_one("#round_bar", ProgressBar).update(total=None)
+        self.query_one("#gen_bar", ProgressBar).display = False
+        self.query_one("#round_bar", ProgressBar).display = False
+        self.query_one("#round_label", Static).display = False
         if self._auto_start:
             try:
                 preflight_qwen_runtime()
@@ -94,17 +95,23 @@ class GenerationScreen(Screen):
         round_label = self.query_one("#round_label", Static)
 
         if event.phase == "synthesize" and event.total > 0:
+            bar.display = True
             bar.update(total=event.total, progress=event.current)
             if event.round_total > 0:
+                round_bar.display = True
+                round_label.display = True
                 round_bar.update(total=event.round_total, progress=event.round_current)
                 seg_display = f"{event.seg} / {self._seg_count}" if self._seg_count else str(event.seg)
                 round_label.update(f"[dim]Segment {seg_display}[/dim]")
+            else:
+                round_bar.display = False
+                round_label.display = False
         else:
             if event.phase == "script" and event.total > 0:
                 self._seg_count = event.total
-            bar.update(total=None)
-            round_bar.update(total=None)
-            round_label.update("")
+            bar.display = False
+            round_bar.display = False
+            round_label.display = False
 
         if event.message:
             self.query_one("#gen_log", RichLog).write(f"[dim]{label}[/dim]  {event.message}")
