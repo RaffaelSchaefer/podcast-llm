@@ -2,7 +2,7 @@
 
 Local podcast generator inspired by NotebookLM's podcast workflow. It parses source files to Markdown, asks a local [LM Studio](https://lmstudio.ai/) model (via the `lmstudio` SDK) for a segmented two-host script, and synthesizes the dialogue locally with Qwen3-TTS.
 
-Audio generation uses `Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice` by default. Optional quiet dynamic background music uses [`ACE-Step/Ace-Step1.5`](https://huggingface.co/ACE-Step/Ace-Step1.5), which is published with an MIT license. WAV files preserve 32-bit float audio, and MP3 export uses ffmpeg/LAME's highest VBR quality setting.
+Audio generation uses `Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice` by default. Optional quiet dynamic background music uses the ACE-Step v1.5 [`ACE-Step/acestep-v15-base`](https://huggingface.co/ACE-Step/acestep-v15-base) checkpoint, which is published with an MIT license. WAV files preserve 32-bit float audio, and MP3 export uses ffmpeg/LAME's highest VBR quality setting.
 
 ## Setup
 

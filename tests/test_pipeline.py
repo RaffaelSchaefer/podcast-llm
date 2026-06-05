@@ -199,6 +199,35 @@ def test_pipeline_fails_when_enabled_background_music_generation_fails(tmp_path:
         raise AssertionError("Expected background music failure to propagate")
 
 
+def test_pipeline_fails_when_enabled_background_music_is_silent(tmp_path: Path) -> None:
+    class SilentMusicGenerator(FakeMusicGenerator):
+        def generate(self, prompt: str, duration_seconds: float, sample_rate: int) -> np.ndarray:
+            return np.zeros((max(1, round(duration_seconds * sample_rate)),), dtype=np.float32)
+
+    source = tmp_path / "notes.md"
+    source.write_text("# Notes\n", encoding="utf-8")
+    request = GenerationRequest(
+        source_paths=[source],
+        language="en",
+        duration_minutes=2,
+        enable_background_music=True,
+        output_dir=tmp_path / "outputs",
+    )
+    pipeline = PodcastPipeline(
+        parser=FakeParser(),
+        llm_provider=FakeProvider(),
+        synthesizer=FakeSynthesizer(),
+        music_generator=SilentMusicGenerator(),
+    )
+
+    try:
+        pipeline.generate(request)
+    except RuntimeError as exc:
+        assert "silent background music" in str(exc)
+    else:
+        raise AssertionError("Expected silent background music failure to propagate")
+
+
 def test_pipeline_deletes_intermediate_wav_after_mp3_export(tmp_path: Path, monkeypatch) -> None:
     source = tmp_path / "notes.md"
     source.write_text("# Notes\n", encoding="utf-8")

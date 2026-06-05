@@ -10,6 +10,7 @@ from .background_music import (
     apply_edge_fades,
     build_section_prompt,
     mix_background_music,
+    peak_amplitude,
 )
 from .export import concat_audio, maybe_export_mp3, slugify, write_json, write_transcript, write_wav
 from .llm import LLMProvider
@@ -241,6 +242,8 @@ class PodcastPipeline:
             )
             music = generator.generate(prompt, duration_seconds, sample_rate)
             music = apply_edge_fades(music, sample_rate, DEFAULT_FADE_SECONDS)
+            if peak_amplitude(music) <= 0.0:
+                raise RuntimeError(f"Generated silent background music for section {index}: {segment.title}")
             mixed_sections.append(mix_background_music(section_speech, music, DEFAULT_MUSIC_GAIN))
 
         emit(ProgressEvent("export", "Mixing background music..."))
